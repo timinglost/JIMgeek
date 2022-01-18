@@ -1,0 +1,12 @@
+2022-01-18 19:30:44,362 - INFO       - client   - Установленно подключение 
+2022-01-18 19:30:45,722 - Функция message_from_server вызвана из функции run 
+2022-01-18 19:30:45,722 - Функция message_from_server вызвана из функции run 
+2022-01-18 19:30:45,722 - Функция massage_post вызвана из функции run 
+2022-01-18 19:30:45,722 - Функция massage_post вызвана из функции run 
+2022-01-18 19:30:47,430 - Функция create_message вызвана из функции massage_post 
+2022-01-18 19:30:47,430 - Функция create_message вызвана из функции massage_post 
+2022-01-18 19:30:47,430 - Функция create_message вызвана из функции massage_post 
+2022-01-18 19:30:51,841 - Функция create_exit_message вызвана из функции massage_post 
+2022-01-18 19:30:51,841 - Функция create_exit_message вызвана из функции massage_post 
+2022-01-18 19:30:51,841 - Функция create_exit_message вызвана из функции massage_post 
+2022-01-18 19:30:51,841 - Функция create_exit_message вызвана из функции massage_post 

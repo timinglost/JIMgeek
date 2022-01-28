@@ -2,3 +2,5 @@ ACTION: action
 FROM: from
 MESSAGE: message
 TIME: time
+JOIN: join
+LEAVE: leave

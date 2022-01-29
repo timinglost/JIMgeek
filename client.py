@@ -54,7 +54,7 @@ def message_from_server(sock, username, m_config, config):
                     print(f'{message[m_config["FROM"]]}: {message[m_config["MESSAGE"]]}')
             if config['ACTION'] in message and message[config['ACTION']] == m_config['LEAVE'] and \
                     config['TIME'] in message:
-                    print(f'{message[m_config["ACCOUNT_NAME"]]} покинул чат.')
+                    print(f'{message[config["ACCOUNT_NAME"]]} покинул чат.')
 
 
 
@@ -69,6 +69,7 @@ def massage_post(sock, username, m_config, config):
                 elif command == 'e':
                         create_exit_message(sock, username, m_config, config)
                         print('Завершение соединения.')
+                        time.sleep(0.5)
                         break
                 else:
                         print('Команда не распознана, попробойте снова.')

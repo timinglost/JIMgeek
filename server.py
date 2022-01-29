@@ -43,6 +43,12 @@ def massege_treatment(massage, config):
             "alert": "Неверные данные"}
 
 
+@Log()
+def check_message(messege, config_m):
+    if config_m['ACTION'] in messege and messege[f'{config_m["ACTION"]}'] == config_m['LEAVE']:
+        return config_m['LEAVE']
+    return 0
+
 # @Log()
 # def handle_message(message, masssag_list, config):
 #     if config['ACTION'] in message and message[config['ACTION']] == 'msg' and \
@@ -90,7 +96,6 @@ def main():
             pass
         else:
             clients.append(client)
-            print('clients: ', clients)
         finally:
             r = []
             w = []
@@ -101,7 +106,10 @@ def main():
             except Exception as e:
                 pass
             for client_i in r:
-                massage = get_data(client_i, config)
+                try:
+                    massage = get_data(client_i, config)
+                except ConnectionResetError:
+                    clients.remove(client_i)
                 messages.append(massage)
             for client_i in w:
                 try:

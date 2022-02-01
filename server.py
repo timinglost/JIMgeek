@@ -3,58 +3,70 @@ import time, json, sys, logging, log.server_log_config, select
 from utils import *
 from functools import wraps
 import inspect
+from metaclasses import ServerVerifier
 
 
-class Log:
-    def __init__(self):
-        pass
+class Port:
+    def __set__(self, instance, value):
+        if value not in range(1024, 65536):
+            server_log.critical(
+                f'Порт должен быть указан в пределах от 1024 до 65535')
+            exit(1)
+        instance.__dict__[self.name] = value
 
-    def __call__(self, func):
-        @wraps(func)
-        def call(*args, **kwargs):
-            server_log_use = logging.getLogger('server_log_config_use')
-            server_log_use.setLevel(logging.INFO)
-
-            my_file_handler_use = logging.FileHandler('log/server.log')
-            client_formatter_use = logging.Formatter("%(asctime)s - %(message)s ")
-            my_file_handler_use.setFormatter(client_formatter_use)
-            my_file_handler_use.setLevel(logging.INFO)
-            server_log_use.addHandler(my_file_handler_use)
-            previous_func = inspect.stack()[1][3]
-            server_log_use.info(f'Функция {func.__name__} вызвана из функции {previous_func}')
-            return func(*args, **kwargs)
-
-        return call
+    def __set_name__(self, owner, name):
+        self.name = name
 
 
-@Log()
-def massege_treatment(massage, config):
-    if config['ACTION'] in massage \
-            and massage[config['ACTION']] == config['PRESENCE'] \
-            and config['TIME'] in massage \
-            and config['USER'] in massage \
-            and massage[config['USER']][config['ACCOUNT_NAME']] == 'Ivan':
-        return {"response": '200',
-                "time": time.time(),
-                "alert": "успешное завершение"}
-    server_log.info('400: Неверные данные')
-    return {"response": '400',
-            "time": time.time(),
-            "alert": "Неверные данные"}
+class Server(metaclass=ServerVerifier):
+    port = Port()
+
+    def __init__(self, address, port):
+        self.address = address
+        self.port = port
+        self.clients = []
+
+    def connect(self):
+        self.s = socket(AF_INET, SOCK_STREAM)
+        self.s.bind((self.address, self.port))
+        self.s.listen(config['MAX_CONNECTIONS'])
+        self.s.settimeout(0.2)
+
+    def start(self):
+        self.connect()
+        while True:
+            try:
+                client, addr = self.s.accept()
+            except OSError as e:
+                pass
+            else:
+                self.clients.append(client)
+            finally:
+                r = []
+                w = []
+                e = []
+                messages = []
+                try:
+                    r, w, e = select.select(self.clients, self.clients, [], 0)
+                except Exception as e:
+                    pass
+                for client_i in r:
+                    try:
+                        massage = get_data(client_i, config)
+                    except ConnectionResetError:
+                        self.clients.remove(client_i)
+                    messages.append(massage)
+                for client_i in w:
+                    try:
+                        post_data(client_i, messages[0], config)
+
+                    except Exception as e:
+                        pass
+                if len(messages) > 0:
+                    del messages[0]
 
 
-# @Log()
-# def handle_message(message, masssag_list, config):
-#     if config['ACTION'] in message and message[config['ACTION']] == 'msg' and \
-#             config['FROM'] in message and config['MESSAGE'] in message and \
-#             config['TIME'] in message:
-#         masssag_list.append(message)
-
-
-def main():
-    config = load_config('config.yaml')
-    config_message = load_config('config_massag.yaml')
-    clients = []
+def connection_config():
     try:
         if '-p' in sys.argv:
             port = int(sys.argv[sys.argv.index('-p') + 1])
@@ -78,41 +90,17 @@ def main():
     except IndexError:
         server_log.warning('После \'a\'- необходимо указать адрес для ')
         sys.exit(1)
-    s = socket(AF_INET, SOCK_STREAM)
-    s.bind((address, port))
-    s.listen(config['MAX_CONNECTIONS'])
-    s.settimeout(0.2)
+    return address, port
 
-    while True:
-        try:
-            client, addr = s.accept()
-        except OSError as e:
-            pass
-        else:
-            clients.append(client)
-            print('clients: ', clients)
-        finally:
-            r = []
-            w = []
-            e = []
-            messages = []
-            try:
-                r, w, e = select.select(clients, clients, [], 0)
-            except Exception as e:
-                pass
-            for client_i in r:
-                massage = get_data(client_i, config)
-                messages.append(massage)
-            for client_i in w:
-                try:
-                    post_data(client_i, messages[0], config)
 
-                except Exception as e:
-                    pass
-            if len(messages) > 0:
-                del messages[0]
+def main():
+    add, port = connection_config()
+    start_server = Server(add, port)
+    start_server.start()
 
 
 if __name__ == '__main__':
+    config = load_config('config.yaml')
+    config_message = load_config('config_massag.yaml')
     server_log = logging.getLogger('server_log_config')
     main()

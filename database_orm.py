@@ -9,7 +9,7 @@ engine = create_engine('sqlite:///messenger.db', echo=True)
 
 class User(Base):
     __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String)
     password = Column(String)
 
@@ -23,7 +23,7 @@ class User(Base):
 
 class UserHistory(Base):
     __tablename__ = 'user_history'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     id_user = Column(Integer, ForeignKey('users.id'))
     time_connect = Column(DateTime(timezone=True), server_default=func.now())
     ip_addr = Column(String)
@@ -39,7 +39,7 @@ class UserHistory(Base):
 
 class ContactList(Base):
     __tablename__ = 'contact_list'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     id_user = Column(Integer, ForeignKey('users.id'))
     id_client = Column(Integer, ForeignKey('users.id'))
 

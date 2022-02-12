@@ -7,132 +7,199 @@ import inspect
 from metaclasses import ClientVerifier
 
 
-class ClientGet(threading.Thread, metaclass=ClientVerifier):
-        def __init__(self, sock, client_name):
-                self.s = sock
-                self.client_name = client_name
-                super().__init__()
-
-        def run(self):
-                db_user = sqlite3.connect(f'client_db/{self.client_name}_db.db')
-                cursor = db_user.cursor()
-                cursor.execute(f'SELECT text FROM massege')
-                results = cursor.fetchall()
-                db_user.close()
-                if results:
-                        for i in results:
-                                print(i[0])
-                while True:
-                        message = get_data(self.s, config)
-                        if m_config['ACTION'] in message and message[m_config['ACTION']] == m_config['JOIN'] and \
-                                m_config['FROM'] in message:
-                                print(f'{message[m_config["FROM"]]} присоединился к чату.')
-                        if m_config['ACTION'] in message and message[m_config['ACTION']] == 'msg' and \
-                                m_config['FROM'] in message and m_config['MESSAGE'] in message and \
-                                m_config['TIME'] in message:
-                                m = f'{message[m_config["FROM"]]}: {message[m_config["MESSAGE"]]}'
-                                print(m)
-                                db_user = sqlite3.connect(f'client_db/{self.client_name}_db.db')
-                                cursor = db_user.cursor()
-                                cursor.execute(f'insert into massege(text) values ("{m}");')
-                                db_user.commit()
-                                db_user.close()
-                        if config['ACTION'] in message and message[config['ACTION']] == m_config['LEAVE'] and \
-                                config['TIME'] in message:
-                                print(f'{message[config["ACCOUNT_NAME"]]} покинул чат.')
-                        if 'response' in message and type(message['response']) == str:
-                                print(message['response'])
-                        if 'response' in message and 'alert' in message:
-                                print(message['alert'])
-
-
-class ClientPost(threading.Thread):
-        def __init__(self, sock, client_name):
-                self.s = sock
-                self.client_name = client_name
-                super().__init__()
-        def run(self):
-                self.create_join_message()
-                print(f'Добро пожаловать в чат {self.client_name}!')
-                while True:
-                        command = input('Введите команду "gc" для получения контактов\n'
-                                        '"ac" и "dc" для добовления/удаления контакта\n'
-                                        '"m" для сообщения, "e" для выхода: ')
-                        if command == 'm':
-                                self.create_message()
-                        elif command == 'gc':
-                                self.get_contact()
-                        elif command == 'ac':
-                                self.add_contact()
-                        elif command == 'dc':
-                                self.delete_contact()
-                        elif command == 'e':
-                                self.create_exit_message()
-                                print('Завершение соединения.')
-                                time.sleep(0.5)
-                                break
+class Client:
+        def __init__(self):
+                self.client_log = logging.getLogger('client_log_config')
+                self.config = load_config('config.yaml')
+                self.m_config = load_config('config_massag.yaml')
+                try:
+                        if '-p' in sys.argv:
+                                port = int(sys.argv[sys.argv.index('-p') + 1])
                         else:
-                                print('Команда не распознана, попробойте снова.')
+                                port = self.config['DEFAULT_PORT']
+                        if not 65535 >= port >= 1024:
+                                raise ValueError
+                except IndexError:
+                        self.client_log.warning('После -\'p\' необходимо указать порт')
+                        sys.exit(1)
+                except ValueError:
+                        self.client_log.warning('Порт должен быть указан в пределах от 1024 до 65535')
+                        sys.exit(1)
+                try:
+                        if '-a' in sys.argv:
+                                address = sys.argv[sys.argv.index('-a') + 1]
+                        else:
+                                address = self.config['DEFAULT_IP_ADDRESS']
 
-        def create_join_message(self):
-                message_dict = {
-                        m_config['ACTION']: m_config['JOIN'],
-                        m_config['TIME']: time.time(),
-                        m_config['FROM']: self.client_name
-                }
-                post_data(self.s, message_dict, config)
+                except IndexError:
+                        self.client_log.warning('После \'a\'- необходимо указать адрес для ')
+                        sys.exit(1)
+                self.s = socket(AF_INET, SOCK_STREAM)
+                try:
+                        self.s.connect((address, port))
+                        self.client_log.info('Установленно подключение')
+                        # connect = self.logging_user(self.s)
+                        # self.update_db(s, connect)
+                        # if connect is not False:
+                                # receiver = self.ClientGet(self.s, connect)
+                                # receiver.daemon = True
+                                # receiver.start()
+                                # user_interface = self.ClientPost(self.s, connect)
+                                # # receiver.daemon = True
+                                # user_interface.start()
+                except ConnectionRefusedError:
+                        self.client_log.error('400: Bad Request')
 
-        def create_message(self):
-                message = input('Введите сообщение для отправки: ')
-                message_dict = {
-                        m_config['ACTION']: 'msg',
-                        m_config['FROM']: self.client_name,
-                        m_config['TIME']: time.time(),
-                        m_config['MESSAGE']: message
-                }
-                post_data(self.s, message_dict, config)
+        class ClientGet(threading.Thread, metaclass=ClientVerifier):
+                def __init__(self, sock, client_name):
+                        self.client_log = logging.getLogger('client_log_config')
+                        self.config = load_config('config.yaml')
+                        self.m_config = load_config('config_massag.yaml')
+                        self.s = sock
+                        self.client_name = client_name
+                        self.contact_list = []
+                        self.massege_list = []
+                        self.room_id_now = ''
+                        self.m = ''
+                        super().__init__()
 
-        def create_exit_message(self):
-                message_dict = {
-                        config['ACTION']: m_config['LEAVE'],
-                        config['TIME']: time.time(),
-                        config['ACCOUNT_NAME']: self.client_name
-                }
-                post_data(self.s, message_dict, config)
-
-        def get_contact(self):
-                message_dict = {
-                    "action": "get_contacts",
-                    "time": time.time(),
-                    "user_login": self.client_name
-                }
-                post_data(self.s, message_dict, config)
-
-        def add_contact(self):
-                user_id = input('Введите ник для добавления: ')
-                message_dict = {
-                    "action": "add_contact",
-                    "user_id": user_id,
-                    "time": time.time(),
-                    "user_login": self.client_name
-                }
-                post_data(self.s, message_dict, config)
-
-        def delete_contact(self):
-                user_id = input('Введите ник для удаления: ')
-                message_dict = {
-                        "action": "del_contact",
-                        "user_id": user_id,
-                        "time": time.time(),
-                        "user_login": self.client_name
-                }
-                post_data(self.s, message_dict, config)
+                def run(self):
+                        # db_user = sqlite3.connect(f'client_db/{self.client_name}_db.db')
+                        # cursor = db_user.cursor()
+                        # cursor.execute(f'SELECT text FROM massege')
+                        # results = cursor.fetchall()
+                        # db_user.close()
+                        # if results:
+                        #         for i in results:
+                        #                 print(i[0])
+                        while True:
+                                self.m = 'COD_NONE_MASSAGE'
+                                message = get_data(self.s, self.config)
+                                print(message)
+                                if self.m_config['ACTION'] in message and message[self.m_config['ACTION']] == self.m_config['JOIN'] and \
+                                        self.m_config['FROM'] in message:
+                                        print(f'{message[self.m_config["FROM"]]} присоединился к чату.')
+                                if self.m_config['ACTION'] in message and message[self.m_config['ACTION']] == 'msg' and \
+                                        self.m_config['FROM'] in message and self.m_config['MESSAGE'] in message and \
+                                        self.m_config['TIME'] in message:
+                                        self.m = message
+                                        print('m: ', message)
+                                if self.config['ACTION'] in message and message[self.config['ACTION']] == self.m_config['LEAVE'] and \
+                                        self.config['TIME'] in message:
+                                        print(f'{message[self.config["ACCOUNT_NAME"]]} покинул чат.')
+                                if 'response' in message and type(message['response']) == str:
+                                        print(message['response'])
+                                if 'response' in message and 'alert' in message:
+                                        self.contact_list = message['alert']
+                                if 'action' in message and message['action'] == 'mh':
+                                        self.massege_list = message['alert']
+                                        self.room_id_now = message['to']
 
 
-def logging_user(s):
-        while True:
-            name = input('Введите ник: ')
-            password = input('Введите пароль: ')
+        class ClientPost(threading.Thread):
+                def __init__(self, sock, client_name):
+                        self.client_log = logging.getLogger('client_log_config')
+                        self.config = load_config('config.yaml')
+                        self.m_config = load_config('config_massag.yaml')
+                        self.s = sock
+                        self.client_name = client_name
+                        self.run_script = True
+                        super().__init__()
+                def run(self):
+                        self.create_join_message()
+                        print(f'Добро пожаловать в чат {self.client_name}!')
+                        while True:
+                                time.sleep(1)
+                                # command = input('Введите команду "gc" для получения контактов\n'
+                                #                 '"ac" и "dc" для добовления/удаления контакта\n'
+                                #                 '"m" для сообщения, "e" для выхода: ')
+                                # if command == 'm':
+                                #         self.create_message()
+                                # elif command == 'gc':
+                                #         self.get_contact()
+                                # elif command == 'ac':
+                                #         self.add_contact()
+                                # elif command == 'dc':
+                                #         self.delete_contact()
+                                # elif command == 'e' or self.run_script is False:
+                                #         self.create_exit_message()
+                                #         print('Завершение соединения.')
+                                #         time.sleep(0.5)
+                                #         break
+                                # else:
+                                #         print('Команда не распознана, попробойте снова.')
+                                if self.run_script is False:
+                                        self.create_exit_message()
+                                        print('Завершение соединения.')
+                                        time.sleep(0.5)
+                                        break
+
+                def create_join_message(self):
+                        message_dict = {
+                                self.m_config['ACTION']: self.m_config['JOIN'],
+                                self.m_config['TIME']: time.time(),
+                                self.m_config['FROM']: self.client_name
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def create_message(self, text, room_id):
+                        message_dict = {
+                                self.m_config['ACTION']: 'msg',
+                                self.m_config['FROM']: self.client_name,
+                                'to': room_id,
+                                self.m_config['TIME']: time.time(),
+                                self.m_config['MESSAGE']: text
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def create_exit_message(self):
+                        message_dict = {
+                                self.config['ACTION']: self.m_config['LEAVE'],
+                                self.config['TIME']: time.time(),
+                                self.config['ACCOUNT_NAME']: self.client_name
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def get_contact(self):
+                        message_dict = {
+                            "action": "get_contacts",
+                            "time": time.time(),
+                            "user_login": self.client_name
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def add_contact(self, user_id):
+                        message_dict = {
+                            "action": "add_contact",
+                            "user_id": user_id,
+                            "time": time.time(),
+                            "user_login": self.client_name
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def delete_contact(self, user_id):
+                        message_dict = {
+                                "action": "del_contact",
+                                "user_id": user_id,
+                                "time": time.time(),
+                                "user_login": self.client_name
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def get_massage_history(self, user_name):
+                        message_dict = {
+                                "action": "get_massage",
+                                "user_name": user_name,
+                                "time": time.time(),
+                                "user_login": self.client_name
+                        }
+                        post_data(self.s, message_dict, self.config)
+
+                def close_client(self):
+                        self.run_script = False
+
+
+        def logging_user(self, name, password):
             message_dict = {
                         "action": "authenticate",
                         "time": time.time(),
@@ -141,74 +208,90 @@ def logging_user(s):
                                 "password": password
                         }
             }
-            post_data(s, message_dict, config)
-            message = get_data(s, config)
+            post_data(self.s, message_dict, self.config)
+            message = get_data(self.s, self.config)
             if message['response'] == 200:
-                return name
+                self.name = name
+                self.receiver = self.ClientGet(self.s, self.name)
+                self.receiver.daemon = True
+                self.receiver.start()
+                self.user_interface = self.ClientPost(self.s, self.name)
+                # receiver.daemon = True
+                self.user_interface.start()
+                return True, message
             else:
-                print(message['error'])
+                return False, message
 
+        def get_contact(self):
+                self.user_interface.get_contact()
+                time.sleep(0.5)
+                return self.receiver.contact_list
 
-def update_db(s, name):
-        message_dict = {
-                "action": "get_contacts_all",
-                "time": time.time(),
-                "user_login": name
-        }
-        post_data(s, message_dict, config)
-        message = get_data(s, config)
-        db_user = sqlite3.connect(f'client_db/{name}_db.db')
-        cursor = db_user.cursor()
-        for i in message['alert']:
-                cursor.execute(f'insert OR IGNORE into contact(id, name) values ("{i[0]}", "{i[1]}");')
-                db_user.commit()
-        db_user.close()
+        def get_massage_history(self, name):
+                self.user_interface.get_massage_history(name)
+                time.sleep(0.5)
+                return self.receiver.massege_list, self.receiver.room_id_now
+
+        def update_db(self, s, name):
+                message_dict = {
+                        "action": "get_contacts_all",
+                        "time": time.time(),
+                        "user_login": name
+                }
+                post_data(s, message_dict, self.config)
+                message = get_data(s, self.config)
+                db_user = sqlite3.connect(f'client_db/{name}_db.db')
+                cursor = db_user.cursor()
+                for i in message['alert']:
+                        cursor.execute(f'insert OR IGNORE into contact(id, name) values ("{i[0]}", "{i[1]}");')
+                        db_user.commit()
+                db_user.close()
 
 
 
 def main():
-        client_log = logging.getLogger('client_log_config')
-        try:
-                if '-p' in sys.argv:
-                        port = int(sys.argv[sys.argv.index('-p') + 1])
-                else:
-                        port = config['DEFAULT_PORT']
-                if not 65535 >= port >= 1024:
-                        raise ValueError
-        except IndexError:
-                client_log.warning('После -\'p\' необходимо указать порт')
-                sys.exit(1)
-        except ValueError:
-                client_log.warning('Порт должен быть указан в пределах от 1024 до 65535')
-                sys.exit(1)
-        try:
-                if '-a' in sys.argv:
-                        address = sys.argv[sys.argv.index('-a') + 1]
-                else:
-                        address = config['DEFAULT_IP_ADDRESS']
-
-        except IndexError:
-                client_log.warning('После \'a\'- необходимо указать адрес для ')
-                sys.exit(1)
-        s = socket(AF_INET, SOCK_STREAM)
-        try:
-                s.connect((address, port))
-                client_log.info('Установленно подключение')
-                connect = logging_user(s)
-                update_db(s, connect)
-                if connect is not False:
-                        receiver = ClientGet(s, connect)
-                        receiver.daemon = True
-                        receiver.start()
-                        user_interface = ClientPost(s, connect)
-                        # receiver.daemon = True
-                        user_interface.start()
-        except ConnectionRefusedError:
-                client_log.error('400: Bad Request')
+        # try:
+        #         if '-p' in sys.argv:
+        #                 port = int(sys.argv[sys.argv.index('-p') + 1])
+        #         else:
+        #                 port = config['DEFAULT_PORT']
+        #         if not 65535 >= port >= 1024:
+        #                 raise ValueError
+        # except IndexError:
+        #         client_log.warning('После -\'p\' необходимо указать порт')
+        #         sys.exit(1)
+        # except ValueError:
+        #         client_log.warning('Порт должен быть указан в пределах от 1024 до 65535')
+        #         sys.exit(1)
+        # try:
+        #         if '-a' in sys.argv:
+        #                 address = sys.argv[sys.argv.index('-a') + 1]
+        #         else:
+        #                 address = config['DEFAULT_IP_ADDRESS']
+        #
+        # except IndexError:
+        #         client_log.warning('После \'a\'- необходимо указать адрес для ')
+        #         sys.exit(1)
+        # s = socket(AF_INET, SOCK_STREAM)
+        # try:
+        #         s.connect((address, port))
+        #         client_log.info('Установленно подключение')
+        #         connect = logging_user(s)
+        #         update_db(s, connect)
+        #         if connect is not False:
+        #                 receiver = ClientGet(s, connect)
+        #                 receiver.daemon = True
+        #                 receiver.start()
+        #                 user_interface = ClientPost(s, connect)
+        #                 # receiver.daemon = True
+        #                 user_interface.start()
+        # except ConnectionRefusedError:
+        #         client_log.error('400: Bad Request')
+        client = Client()
 
 
 if __name__ == '__main__':
-        client_log = logging.getLogger('client_log_config')
-        config = load_config('config.yaml')
-        m_config = load_config('config_massag.yaml')
+        # client_log = logging.getLogger('client_log_config')
+        # config = load_config('config.yaml')
+        # m_config = load_config('config_massag.yaml')
         main()

@@ -51,4 +51,46 @@ class ContactList(Base):
         return "<ContactList('%s', '%s')>" % (self.id_user, self.id_client)
 
 
+class Room(Base):
+    __tablename__ = 'room'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String)
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return "<Room('%s')>" % (self.name)
+
+
+class RoomChat(Base):
+    __tablename__ = 'roomchat'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_room = Column(Integer, ForeignKey('room.id'))
+    id_user = Column(Integer, ForeignKey('users.id'))
+
+    def __init__(self, id_room, id_user):
+        self.id_room = id_room
+        self.id_user = id_user
+
+    def __repr__(self):
+        return "<Room('%s', '%s')>" % (self.id_room, self.id_user)
+
+
+class Massage(Base):
+    __tablename__ = 'massage'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_user = Column(Integer, ForeignKey('users.id'))
+    id_room = Column(Integer, ForeignKey('room.id'))
+    text = Column(String)
+
+
+    def __init__(self, id_user, id_room, text):
+        self.id_user = id_user
+        self.id_room = id_room
+        self.text = text
+
+    def __repr__(self):
+        return "<Massage('%s', '%s')>" % (self.id_user, self.id_room)
+
 Base.metadata.create_all(engine)

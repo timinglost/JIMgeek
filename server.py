@@ -26,6 +26,7 @@ class Server(metaclass=ServerVerifier):
         self.address = address
         self.port = port
         self.clients = []
+        self.info_client = []
 
     def connect(self):
         self.s = socket(AF_INET, SOCK_STREAM)
@@ -60,6 +61,8 @@ class Server(metaclass=ServerVerifier):
                             post_data(client_i, check_masseng, config)
                     except ConnectionResetError:
                         self.clients.remove(client_i)
+                    except json.decoder.JSONDecodeError:
+                        self.clients.remove(client_i)
                     if check_masseng is True:
                         messages.append(massage)
                 for client_i in w:
@@ -72,6 +75,8 @@ class Server(metaclass=ServerVerifier):
                     del messages[0]
 
     def check_masseng(self, massege, client):
+        if massege['action'] == 'join':
+            return self.add_user(massege, client)
         if massege['action'] == 'authenticate':
             return self.login_client(massege, client)
         if massege['action'] == 'get_contacts':
@@ -82,7 +87,72 @@ class Server(metaclass=ServerVerifier):
             return self.del_contact(massege)
         if massege['action'] == 'get_contacts_all':
             return self.get_contacts_all(massege)
+        if massege['action'] == 'msg':
+            return self.post_massage(massege)
+        if massege['action'] == 'get_massage':
+            return self.get_massage(massege)
+        if massege['action'] == 'leave':
+            return self.del_user(massege)
         return True
+
+    def del_user(self, massage):
+        for i in self.info_client:
+            if i[1] == massage['account_name']:
+                self.info_client.remove(i)
+
+    def get_massage(self, massage):
+        conn = sqlite3.connect("messenger.db")
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT id FROM users WHERE name = '{massage['user_name']}';")
+        client_id = cursor.fetchone()[0]
+        cursor.execute(f"SELECT id FROM users WHERE name = '{massage['user_login']}';")
+        user_id = cursor.fetchone()[0]
+        cursor.execute(f"SELECT id FROM room WHERE name = '{client_id}-{user_id}' OR name = '{user_id}-{client_id}';")
+        room_id = cursor.fetchone()[0]
+        cursor.execute(f"SELECT * FROM massage WHERE id_room = '{room_id}';")
+        results = cursor.fetchall()
+        conn.close()
+        answer = []
+        if len(results) != 0:
+            for i in results:
+                if i[1] == user_id:
+                    answer.append(f'{massage["user_login"]}: {i[3]}')
+                elif i[1] == client_id:
+                    answer.append(f'{massage["user_name"]}: {i[3]}')
+        answer = {
+            "action": 'mh',
+            "alert": answer,
+            "to": room_id
+        }
+        return answer
+
+    def post_massage(self, massage):
+        conn = sqlite3.connect("messenger.db")
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT id FROM users WHERE name = '{massage['from']}';")
+        user_id = cursor.fetchone()[0]
+        cursor.execute(f'SELECT id_user FROM roomchat WHERE id_room = {massage["to"]}')
+        results = cursor.fetchall()
+        for i in results:
+            if i[0] != user_id:
+                client_id = i[0]
+        cursor.execute(
+            f'insert into massage(id_user, id_room, text) values ("{user_id}", "{massage["to"]}", "{massage["message"]}");')
+        conn.commit()
+        conn.close()
+        for i in self.info_client:
+            if i[0] == client_id:
+                post_data(i[2], massage, config)
+        return massage
+
+    def add_user(self, massage, client):
+        conn = sqlite3.connect("messenger.db")
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT id FROM users WHERE name = '{massage['from']}';")
+        user_id = cursor.fetchone()[0]
+        conn.close()
+        self.info_client.append([user_id, massage['from'], client])
+        return massage
 
     def login_client(self, massege, client):
         conn = sqlite3.connect("messenger.db")
@@ -154,12 +224,29 @@ class Server(metaclass=ServerVerifier):
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_login']}';")
         id_user = cursor.fetchone()[0]
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_id']}';")
-        id_client = cursor.fetchone()[0]
-        cursor.execute(f'insert into contact_list(id_user, id_client) values ("{id_user}", "{id_client}");')
-        conn.commit()
-        conn.close()
-        return {
-                "response": f"{massege['user_id']} успешно добавлен",
+        id_client_chek = cursor.fetchone()
+        if id_client_chek is not None:
+            id_client = id_client_chek[0]
+            cursor.execute(f'insert into contact_list(id_user, id_client) values ("{id_user}", "{id_client}");')
+            conn.commit()
+            cursor.execute(f'insert into contact_list(id_user, id_client) values ("{id_client}", "{id_user}");')
+            conn.commit()
+            cursor.execute(f'insert into room(name) values ("{id_client}-{id_user}");')
+            conn.commit()
+            cursor.execute(f"SELECT id FROM room WHERE name = '{id_client}-{id_user}';")
+            id_room = cursor.fetchone()[0]
+            cursor.execute(f'insert into roomchat(id_room, id_user) values ("{id_room}", "{id_user}");')
+            conn.commit()
+            cursor.execute(f'insert into roomchat(id_room, id_user) values ("{id_room}", "{id_client}");')
+            conn.commit()
+            conn.close()
+            return {
+                    "response": f"{massege['user_id']} успешно добавлен",
+                }
+        else:
+            conn.close()
+            return {
+                "response": f"{massege['user_id']} не существует",
             }
 
     def del_contact(self, massege):
@@ -170,6 +257,16 @@ class Server(metaclass=ServerVerifier):
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_id']}';")
         id_client = cursor.fetchone()[0]
         cursor.execute(f'DELETE FROM contact_list WHERE id_user = "{id_user}" AND id_client = "{id_client}";')
+        conn.commit()
+        cursor.execute(f'DELETE FROM contact_list WHERE id_user = "{id_client}" AND id_client = "{id_user}";')
+        conn.commit()
+        cursor.execute(f"SELECT id FROM room WHERE name = '{id_client}-{id_user}';")
+        id_room = cursor.fetchone()[0]
+        cursor.execute(f'DELETE FROM roomchat WHERE id_room = "{id_room}" AND id_user = "{id_user}";')
+        conn.commit()
+        cursor.execute(f'DELETE FROM roomchat WHERE id_room = "{id_room}" AND id_user = "{id_client}";')
+        conn.commit()
+        cursor.execute(f'DELETE FROM room WHERE name = "{id_client}-{id_user}";')
         conn.commit()
         conn.close()
         return {

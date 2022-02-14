@@ -1,16 +1,38 @@
 import sys
-import os, sqlite3, logging, threading
 import time
-from datetime import datetime
-import subprocess
+from socket import socket, AF_INET, SOCK_STREAM
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import QInputDialog, QMessageBox
-from PyQt5 import QtCore
-
 from client import Client
 import client_app
 from utils import *
+import hashlib
+
+
+def login_required(func):
+    def decor(self, *args, **kwargs):
+        config = load_config('config.yaml')
+        s = socket(AF_INET, SOCK_STREAM)
+        try:
+            s.connect(('127.0.0.1', 8888))
+        except ConnectionRefusedError:
+            print('400: Bad Request')
+        message_dict = {
+            "action": "check_authenticate",
+            "time": time.time(),
+            "user_login": self.client.name
+        }
+        post_data(s, message_dict, config)
+        answer = get_data(s, config)
+        s.close()
+        if answer['alert'] is True:
+            return func(self, *args, **kwargs)
+        elif answer['alert'] is False:
+            print('login error')
+        else:
+            print('massage error')
+    return decor
 
 
 class SlowTask(QThread):
@@ -35,6 +57,7 @@ class ExampleApp(QtWidgets.QMainWindow, client_app.Ui_MainForm):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.salt = load_config('salt.yaml')['SALT']
         self.client = Client()
         self.logining_client()
         self.get_contact()
@@ -50,13 +73,16 @@ class ExampleApp(QtWidgets.QMainWindow, client_app.Ui_MainForm):
             if ok_login == True:
                 password_text, ok_password = QInputDialog.getText(self, 'Вход', 'Введите пароль:')
                 if ok_password == True:
-                    answer = self.client.logging_user(login_text, password_text)
+                    hashed_password = hashlib.sha512(password_text.encode('utf-8') + self.salt.encode('utf-8')).hexdigest()
+                    answer = self.client.logging_user(login_text, hashed_password)
                     if answer[0] == True:
                         QMessageBox.information(self, 'Вход', answer[1]['alert'], QMessageBox.Yes)
                         break
                     else:
                         QMessageBox.information(self, 'Вход', answer[1]['error'], QMessageBox.Yes)
 
+
+    @login_required
     def get_contact(self):
         self.listWidgetContact.clear()
         contact_l = self.client.get_contact()
@@ -64,18 +90,22 @@ class ExampleApp(QtWidgets.QMainWindow, client_app.Ui_MainForm):
             for i in contact_l:
                 self.listWidgetContact.addItem(f'{i}')
 
+    @login_required
     def add_contact(self):
         name = self.lineEditContact.text()
         self.client.user_interface.add_contact(name)
 
+    @login_required
     def del_contact(self):
         name = self.lineEditContact.text()
         self.client.user_interface.delete_contact(name)
 
+    @login_required
     def enter_massege(self):
         text = self.lineEditMesssag.text()
         self.client.user_interface.create_message(text, self.room_id_now)
 
+    @login_required
     def get_message(self, item):
         user_name = item.text()
         try:

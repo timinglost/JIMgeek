@@ -1,8 +1,9 @@
 from socket import socket, AF_INET, SOCK_STREAM
-import time, json, sys, logging, log.server_log_config, select
+import time
+import sys
+import logging
+import select
 from utils import *
-from functools import wraps
-import inspect
 from metaclasses import ServerVerifier
 import sqlite3
 
@@ -93,7 +94,21 @@ class Server(metaclass=ServerVerifier):
             return self.get_massage(massege)
         if massege['action'] == 'leave':
             return self.del_user(massege)
+        if massege['action'] == 'check_authenticate':
+            return self.check_authenticate(massege)
         return True
+
+    def check_authenticate(self, massage):
+        for i in self.info_client:
+            if i[1] == massage['user_login']:
+                return {
+                    "action": 'cl',
+                    "alert": True
+                }
+            return {
+                    "action": 'cl',
+                    "alert": False
+                }
 
     def del_user(self, massage):
         for i in self.info_client:

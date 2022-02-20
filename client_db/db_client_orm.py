@@ -1,7 +1,6 @@
 import sqlite3
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, ForeignKey, DateTime
-from sqlalchemy.orm import mapper, sessionmaker, declarative_base
-from sqlalchemy.sql import func
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.orm import declarative_base
 
 conn = sqlite3.connect("../messenger.db")
 
@@ -14,10 +13,8 @@ for i in results:
     users.append(i[1])
 
 for i in users:
-
     Base = declarative_base()
     engine = create_engine(f'sqlite:///{i}_db.db', echo=True)
-
 
     class Contact(Base):
         __tablename__ = 'contact'
@@ -28,7 +25,7 @@ for i in users:
             self.name = name
 
         def __repr__(self):
-            return "<User('%s', '%s')>" % (self.name)
+            return "<User('%s')>" % (self.name)
 
     class Massege(Base):
         __tablename__ = 'massege'
@@ -41,6 +38,5 @@ for i in users:
 
         def __repr__(self):
             return "<Massege('%s', '%s')>" % (self.name, self.text)
-
 
     Base.metadata.create_all(engine)

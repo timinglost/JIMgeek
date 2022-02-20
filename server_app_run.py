@@ -1,22 +1,24 @@
 import sys
-import os, sqlite3
+import sqlite3
 from datetime import datetime
 import subprocess
-
 from PyQt5 import QtWidgets
-
 import server_app
 
+
 class ExampleApp(QtWidgets.QMainWindow, server_app.Ui_Form):
+    """Клаясс графического приложения управления сервером"""
     def __init__(self):
+        """Метод __init__ выполняющий инициализацию атребутов"""
         super().__init__()
         self.setupUi(self)
         self.show_users()
         self.update_button.clicked.connect(self.show_users)
-        self.contact_list.itemClicked.connect(self.onClicked)
+        self.contact_list.itemClicked.connect(self.on_cliked)
         self.run_server.clicked.connect(self.start_server)
 
-    def onClicked(self, item):
+    def on_cliked(self, item):
+        """Метод получения статистики пользователя по нажатию"""
         self.s_list.clear()
         id_user = int((item.text()).split()[1])
         connect = sqlite3.connect('messenger.db')
@@ -30,6 +32,7 @@ class ExampleApp(QtWidgets.QMainWindow, server_app.Ui_Form):
                 self.s_list.addItem(f'time: {data_time} ip: {i[1]}')
 
     def show_users(self):
+        """Метод заполнения contact_list списком пользователей"""
         self.contact_list.clear()
         connect = sqlite3.connect('messenger.db')
         cursor = connect.cursor()
@@ -41,16 +44,21 @@ class ExampleApp(QtWidgets.QMainWindow, server_app.Ui_Form):
             self.contact_list.addItem(f'id: {i[0]} name: {i[1]}')
 
     def start_server(self):
+        """Метод запуска сервера"""
         adrr = self.lineEditAddres.text()
         port = self.lineEditPort.text()
-        subprocess.Popen(['python', 'server.py', '-a', f'{adrr}', '-p', f'{port}'], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        subprocess.Popen(
+            ['python', 'server.py', '-a', f'{adrr}', '-p', f'{port}'],
+            creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
 def main():
+    """Функция запуска графического приложения"""
     app = QtWidgets.QApplication(sys.argv)
     window = ExampleApp()
     window.show()
     app.exec_()
+
 
 if __name__ == '__main__':
     main()

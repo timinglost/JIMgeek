@@ -6,9 +6,11 @@ import select
 from utils import *
 from metaclasses import ServerVerifier
 import sqlite3
+import log.server_log_config
 
 
 class Port:
+    """Класс выполняющий проверку порта"""
     def __set__(self, instance, value):
         if value not in range(1024, 65536):
             server_log.critical(
@@ -20,22 +22,30 @@ class Port:
         self.name = name
 
 
-class Server(metaclass=ServerVerifier):
+class Server:
+    """Класс выполняющий запуск и работу сервера"""
     port = Port()
 
     def __init__(self, address, port):
+        """Метод __init__ выполняющий инициализацию атребутов"""
         self.address = address
+        """Атрибут адресов"""
         self.port = port
+        """Атрибут порта сервера"""
         self.clients = []
+        """Атрибут списка подключеных пользователей"""
         self.info_client = []
+        """Атрибут списка авторизированных пользователей"""
 
     def connect(self):
+        """Метод базовых настроек подключения сервера"""
         self.s = socket(AF_INET, SOCK_STREAM)
         self.s.bind((self.address, self.port))
         self.s.listen(config['MAX_CONNECTIONS'])
         self.s.settimeout(0.2)
 
     def start(self):
+        """Метод запуска работы сервера"""
         self.connect()
         while True:
             try:
@@ -44,7 +54,6 @@ class Server(metaclass=ServerVerifier):
                 pass
             else:
                 self.clients.append(client)
-                ip_addres = client.getpeername()
             finally:
                 r = []
                 w = []
@@ -76,6 +85,7 @@ class Server(metaclass=ServerVerifier):
                     del messages[0]
 
     def check_masseng(self, massege, client):
+        """Метод проверки запроса от пользователя"""
         if massege['action'] == 'join':
             return self.add_user(massege, client)
         if massege['action'] == 'authenticate':
@@ -99,6 +109,7 @@ class Server(metaclass=ServerVerifier):
         return True
 
     def check_authenticate(self, massage):
+        """Метод проверки авторизированности пользователя"""
         for i in self.info_client:
             if i[1] == massage['user_login']:
                 return {
@@ -111,11 +122,13 @@ class Server(metaclass=ServerVerifier):
                 }
 
     def del_user(self, massage):
+        """Метод удаления пользователя из списка авторизированных"""
         for i in self.info_client:
             if i[1] == massage['account_name']:
                 self.info_client.remove(i)
 
     def get_massage(self, massage):
+        """Метод передачи истории сообщений"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massage['user_name']}';")
@@ -142,6 +155,7 @@ class Server(metaclass=ServerVerifier):
         return answer
 
     def post_massage(self, massage):
+        """Метод передачи сообщения между клиентами"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massage['from']}';")
@@ -152,7 +166,8 @@ class Server(metaclass=ServerVerifier):
             if i[0] != user_id:
                 client_id = i[0]
         cursor.execute(
-            f'insert into massage(id_user, id_room, text) values ("{user_id}", "{massage["to"]}", "{massage["message"]}");')
+            f'insert into massage(id_user, id_room, text) values'
+            f' ("{user_id}", "{massage["to"]}", "{massage["message"]}");')
         conn.commit()
         conn.close()
         for i in self.info_client:
@@ -161,6 +176,7 @@ class Server(metaclass=ServerVerifier):
         return massage
 
     def add_user(self, massage, client):
+        """Метод добавления пользователя в список авторизованных"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massage['from']}';")
@@ -170,6 +186,7 @@ class Server(metaclass=ServerVerifier):
         return massage
 
     def login_client(self, massege, client):
+        """Метод авторизации пользователя"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users")
@@ -186,7 +203,8 @@ class Server(metaclass=ServerVerifier):
                 ip_addres = client.getpeername()
                 conn = sqlite3.connect("messenger.db")
                 cursor = conn.cursor()
-                cursor.execute(f'insert into user_history(id_user, time_connect, ip_addr) values ("{i[0]}", "{time.time()}", "{ip_addres}");')
+                cursor.execute(f'insert into user_history(id_user, time_connect, ip_addr) values'
+                               f' ("{i[0]}", "{time.time()}", "{ip_addres}");')
                 conn.commit()
                 conn.close()
                 break
@@ -198,6 +216,7 @@ class Server(metaclass=ServerVerifier):
         return answer
 
     def get_contacts(self, massege):
+        """Метод передачи списка контактов пользователю"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_login']}';")
@@ -216,6 +235,7 @@ class Server(metaclass=ServerVerifier):
         }
 
     def get_contacts_all(self, massege):
+        """Метод передачи списка контактов пользователю"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_login']}';")
@@ -234,6 +254,7 @@ class Server(metaclass=ServerVerifier):
         }
 
     def add_contact(self, massege):
+        """Метод добавления контакта в список контактов в БД"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_login']}';")
@@ -265,6 +286,7 @@ class Server(metaclass=ServerVerifier):
             }
 
     def del_contact(self, massege):
+        """Метод удаления контакта из списка контактов в БД"""
         conn = sqlite3.connect("messenger.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT id FROM users WHERE name = '{massege['user_login']}';")
@@ -290,6 +312,7 @@ class Server(metaclass=ServerVerifier):
 
 
 def connection_config():
+    """Функция обработки консольных конфигураций запуска сервера"""
     try:
         if '-p' in sys.argv:
             port = int(sys.argv[sys.argv.index('-p') + 1])
@@ -317,6 +340,7 @@ def connection_config():
 
 
 def main():
+    """Функция запуска сервера"""
     add, port = connection_config()
     start_server = Server(add, port)
     start_server.start()

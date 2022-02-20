@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, ForeignKey, DateTime
-from sqlalchemy.orm import mapper, sessionmaker, declarative_base
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
 
@@ -60,7 +60,7 @@ class Room(Base):
         self.name = name
 
     def __repr__(self):
-        return "<Room('%s')>" % (self.name)
+        return "<Room('%s')>" % self.name
 
 
 class RoomChat(Base):
@@ -84,7 +84,6 @@ class Massage(Base):
     id_room = Column(Integer, ForeignKey('room.id'))
     text = Column(String)
 
-
     def __init__(self, id_user, id_room, text):
         self.id_user = id_user
         self.id_room = id_room
@@ -92,5 +91,6 @@ class Massage(Base):
 
     def __repr__(self):
         return "<Massage('%s', '%s')>" % (self.id_user, self.id_room)
+
 
 Base.metadata.create_all(engine)

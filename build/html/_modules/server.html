@@ -1,0 +1,456 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>server &#8212; JIMgeek  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/alabaster.css" />
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for server</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">socket</span> <span class="kn">import</span> <span class="n">socket</span><span class="p">,</span> <span class="n">AF_INET</span><span class="p">,</span> <span class="n">SOCK_STREAM</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">select</span>
+<span class="kn">from</span> <span class="nn">utils</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">metaclasses</span> <span class="kn">import</span> <span class="n">ServerVerifier</span>
+<span class="kn">import</span> <span class="nn">sqlite3</span>
+<span class="kn">import</span> <span class="nn">log.server_log_config</span>
+
+
+<div class="viewcode-block" id="Port"><a class="viewcode-back" href="../server_doc.html#server.Port">[docs]</a><span class="k">class</span> <span class="nc">Port</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Класс выполняющий проверку порта&quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__set__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">65536</span><span class="p">):</span>
+            <span class="n">server_log</span><span class="o">.</span><span class="n">critical</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s1">&#39;Порт должен быть указан в пределах от 1024 до 65535&#39;</span><span class="p">)</span>
+            <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">instance</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">__set_name__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">owner</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span></div>
+
+
+<div class="viewcode-block" id="Server"><a class="viewcode-back" href="../server_doc.html#server.Server">[docs]</a><span class="k">class</span> <span class="nc">Server</span><span class="p">:</span><span class="c1">#(metaclass=ServerVerifier):</span>
+    <span class="sd">&quot;&quot;&quot;Класс выполняющий запуск и работу сервера&quot;&quot;&quot;</span>
+    <span class="n">port</span> <span class="o">=</span> <span class="n">Port</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">port</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод __init__ выполняющий инициализацию атребутов&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">address</span> <span class="o">=</span> <span class="n">address</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут адресов&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут порта сервера&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clients</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут списка подключеных пользователей&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">info_client</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут списка авторизированных пользователей&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Server.connect"><a class="viewcode-back" href="../server_doc.html#server.Server.connect">[docs]</a>    <span class="k">def</span> <span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод базовых настроек подключения сервера&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span> <span class="o">=</span> <span class="n">socket</span><span class="p">(</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">SOCK_STREAM</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">bind</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">address</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">listen</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;MAX_CONNECTIONS&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">settimeout</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Server.start"><a class="viewcode-back" href="../server_doc.html#server.Server.start">[docs]</a>    <span class="k">def</span> <span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод запуска работы сервера&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">client</span><span class="p">,</span> <span class="n">addr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">accept</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="n">r</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="n">w</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="n">e</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="n">messages</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">r</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">e</span> <span class="o">=</span> <span class="n">select</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="p">,</span> <span class="p">[],</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">for</span> <span class="n">client_i</span> <span class="ow">in</span> <span class="n">r</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">massage</span> <span class="o">=</span> <span class="n">get_data</span><span class="p">(</span><span class="n">client_i</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+                        <span class="n">check_masseng</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_masseng</span><span class="p">(</span><span class="n">massage</span><span class="p">,</span> <span class="n">client_i</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">check_masseng</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">True</span><span class="p">:</span>
+                            <span class="n">post_data</span><span class="p">(</span><span class="n">client_i</span><span class="p">,</span> <span class="n">check_masseng</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">ConnectionResetError</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">client_i</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">decoder</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">client_i</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">check_masseng</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+                        <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">massage</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">client_i</span> <span class="ow">in</span> <span class="n">w</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">post_data</span><span class="p">(</span><span class="n">client_i</span><span class="p">,</span> <span class="n">messages</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">config</span><span class="p">)</span>
+
+                    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                        <span class="k">pass</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">del</span> <span class="n">messages</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Server.check_masseng"><a class="viewcode-back" href="../server_doc.html#server.Server.check_masseng">[docs]</a>    <span class="k">def</span> <span class="nf">check_masseng</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massege</span><span class="p">,</span> <span class="n">client</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод проверки запроса от пользователя&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;join&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_user</span><span class="p">(</span><span class="n">massege</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;authenticate&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">login_client</span><span class="p">(</span><span class="n">massege</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;get_contacts&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_contacts</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;add_contact&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_contact</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;del_contact&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">del_contact</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;get_contacts_all&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_contacts_all</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;msg&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">post_massage</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;get_massage&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_massage</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;leave&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">del_user</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;check_authenticate&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_authenticate</span><span class="p">(</span><span class="n">massege</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="Server.check_authenticate"><a class="viewcode-back" href="../server_doc.html#server.Server.check_authenticate">[docs]</a>    <span class="k">def</span> <span class="nf">check_authenticate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massage</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод проверки авторизированности пользователя&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">info_client</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">massage</span><span class="p">[</span><span class="s1">&#39;user_login&#39;</span><span class="p">]:</span>
+                <span class="k">return</span> <span class="p">{</span>
+                    <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s1">&#39;cl&#39;</span><span class="p">,</span>
+                    <span class="s2">&quot;alert&quot;</span><span class="p">:</span> <span class="kc">True</span>
+                <span class="p">}</span>
+            <span class="k">return</span> <span class="p">{</span>
+                    <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s1">&#39;cl&#39;</span><span class="p">,</span>
+                    <span class="s2">&quot;alert&quot;</span><span class="p">:</span> <span class="kc">False</span>
+                <span class="p">}</span></div>
+
+<div class="viewcode-block" id="Server.del_user"><a class="viewcode-back" href="../server_doc.html#server.Server.del_user">[docs]</a>    <span class="k">def</span> <span class="nf">del_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massage</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод удаления пользователя из списка авторизированных&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">info_client</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">massage</span><span class="p">[</span><span class="s1">&#39;account_name&#39;</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">info_client</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">i</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Server.get_massage"><a class="viewcode-back" href="../server_doc.html#server.Server.get_massage">[docs]</a>    <span class="k">def</span> <span class="nf">get_massage</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massage</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод передачи истории сообщений&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s1">&#39;user_name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">client_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s1">&#39;user_login&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM room WHERE name = &#39;</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">&#39; OR name = &#39;</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">room_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT * FROM massage WHERE id_room = &#39;</span><span class="si">{</span><span class="n">room_id</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">answer</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">results</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">user_id</span><span class="p">:</span>
+                    <span class="n">answer</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s2">&quot;user_login&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">client_id</span><span class="p">:</span>
+                    <span class="n">answer</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s2">&quot;user_name&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="n">answer</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s1">&#39;mh&#39;</span><span class="p">,</span>
+            <span class="s2">&quot;alert&quot;</span><span class="p">:</span> <span class="n">answer</span><span class="p">,</span>
+            <span class="s2">&quot;to&quot;</span><span class="p">:</span> <span class="n">room_id</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">answer</span></div>
+
+<div class="viewcode-block" id="Server.post_massage"><a class="viewcode-back" href="../server_doc.html#server.Server.post_massage">[docs]</a>    <span class="k">def</span> <span class="nf">post_massage</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massage</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод передачи сообщения между клиентами&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s1">&#39;from&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;SELECT id_user FROM roomchat WHERE id_room = </span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s2">&quot;to&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">user_id</span><span class="p">:</span>
+                <span class="n">client_id</span> <span class="o">=</span> <span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s1">&#39;insert into massage(id_user, id_room, text) values&#39;</span>
+            <span class="sa">f</span><span class="s1">&#39; (&quot;</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s2">&quot;to&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s2">&quot;message&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">info_client</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">client_id</span><span class="p">:</span>
+                <span class="n">post_data</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">massage</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">massage</span></div>
+
+<div class="viewcode-block" id="Server.add_user"><a class="viewcode-back" href="../server_doc.html#server.Server.add_user">[docs]</a>    <span class="k">def</span> <span class="nf">add_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massage</span><span class="p">,</span> <span class="n">client</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод добавления пользователя в список авторизованных&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massage</span><span class="p">[</span><span class="s1">&#39;from&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">info_client</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">user_id</span><span class="p">,</span> <span class="n">massage</span><span class="p">[</span><span class="s1">&#39;from&#39;</span><span class="p">],</span> <span class="n">client</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">massage</span></div>
+
+<div class="viewcode-block" id="Server.login_client"><a class="viewcode-back" href="../server_doc.html#server.Server.login_client">[docs]</a>    <span class="k">def</span> <span class="nf">login_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massege</span><span class="p">,</span> <span class="n">client</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод авторизации пользователя&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM users&quot;</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">answer</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user&#39;</span><span class="p">][</span><span class="s1">&#39;account_name&#39;</span><span class="p">]</span> <span class="ow">and</span> \
+                    <span class="n">i</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user&#39;</span><span class="p">][</span><span class="s1">&#39;password&#39;</span><span class="p">]:</span>
+                <span class="n">answer</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span>
+                    <span class="s2">&quot;alert&quot;</span><span class="p">:</span> <span class="s2">&quot;Логин и пароль верны&quot;</span>
+                <span class="p">}</span>
+                <span class="n">ip_addres</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">getpeername</span><span class="p">()</span>
+                <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+                <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+                <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert into user_history(id_user, time_connect, ip_addr) values&#39;</span>
+                               <span class="sa">f</span><span class="s1">&#39; (&quot;</span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">ip_addres</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="n">answer</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+            <span class="n">answer</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="mi">402</span><span class="p">,</span>
+                <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s1">&#39;Неверный логин или пароль&#39;</span>
+            <span class="p">}</span>
+        <span class="k">return</span> <span class="n">answer</span></div>
+
+<div class="viewcode-block" id="Server.get_contacts"><a class="viewcode-back" href="../server_doc.html#server.Server.get_contacts">[docs]</a>    <span class="k">def</span> <span class="nf">get_contacts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massege</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод передачи списка контактов пользователю&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_login&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id_client FROM contact_list WHERE id_user = &#39;</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="n">users_name</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT name FROM users WHERE id = &#39;</span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+            <span class="n">user_name</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">users_name</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="mi">202</span><span class="p">,</span>
+            <span class="s2">&quot;alert&quot;</span><span class="p">:</span> <span class="n">users_name</span>
+        <span class="p">}</span></div>
+
+<div class="viewcode-block" id="Server.get_contacts_all"><a class="viewcode-back" href="../server_doc.html#server.Server.get_contacts_all">[docs]</a>    <span class="k">def</span> <span class="nf">get_contacts_all</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massege</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод передачи списка контактов пользователю&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_login&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id_client FROM contact_list WHERE id_user = &#39;</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="n">users_name</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id, name FROM users WHERE id = &#39;</span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+            <span class="n">user_name</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+            <span class="n">users_name</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="mi">202</span><span class="p">,</span>
+            <span class="s2">&quot;alert&quot;</span><span class="p">:</span> <span class="n">users_name</span>
+        <span class="p">}</span></div>
+
+<div class="viewcode-block" id="Server.add_contact"><a class="viewcode-back" href="../server_doc.html#server.Server.add_contact">[docs]</a>    <span class="k">def</span> <span class="nf">add_contact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massege</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод добавления контакта в список контактов в БД&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_login&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">id_user</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">id_client_chek</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">id_client_chek</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">id_client</span> <span class="o">=</span> <span class="n">id_client_chek</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert into contact_list(id_user, id_client) values (&quot;</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert into contact_list(id_user, id_client) values (&quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert into room(name) values (&quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">-</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM room WHERE name = &#39;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+            <span class="n">id_room</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert into roomchat(id_room, id_user) values (&quot;</span><span class="si">{</span><span class="n">id_room</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert into roomchat(id_room, id_user) values (&quot;</span><span class="si">{</span><span class="n">id_room</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">{</span>
+                    <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> успешно добавлен&quot;</span><span class="p">,</span>
+                <span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> не существует&quot;</span><span class="p">,</span>
+            <span class="p">}</span></div>
+
+<div class="viewcode-block" id="Server.del_contact"><a class="viewcode-back" href="../server_doc.html#server.Server.del_contact">[docs]</a>    <span class="k">def</span> <span class="nf">del_contact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">massege</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод удаления контакта из списка контактов в БД&quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;messenger.db&quot;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_login&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">id_user</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM users WHERE name = &#39;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">id_client</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;DELETE FROM contact_list WHERE id_user = &quot;</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot; AND id_client = &quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">&quot;;&#39;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;DELETE FROM contact_list WHERE id_user = &quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">&quot; AND id_client = &quot;</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;;&#39;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT id FROM room WHERE name = &#39;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s2">&#39;;&quot;</span><span class="p">)</span>
+        <span class="n">id_room</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;DELETE FROM roomchat WHERE id_room = &quot;</span><span class="si">{</span><span class="n">id_room</span><span class="si">}</span><span class="s1">&quot; AND id_user = &quot;</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;;&#39;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;DELETE FROM roomchat WHERE id_room = &quot;</span><span class="si">{</span><span class="n">id_room</span><span class="si">}</span><span class="s1">&quot; AND id_user = &quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">&quot;;&#39;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;DELETE FROM room WHERE name = &quot;</span><span class="si">{</span><span class="n">id_client</span><span class="si">}</span><span class="s1">-</span><span class="si">{</span><span class="n">id_user</span><span class="si">}</span><span class="s1">&quot;;&#39;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;response&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">massege</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> успешно удален&quot;</span><span class="p">,</span>
+        <span class="p">}</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">connection_config</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Функция обработки консольных конфигураций запуска сервера&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s1">&#39;-p&#39;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s1">&#39;-p&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;DEFAULT_PORT&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="mi">65535</span> <span class="o">&gt;=</span> <span class="n">port</span> <span class="o">&gt;=</span> <span class="mi">1024</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span>
+    <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+        <span class="n">server_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;После -</span><span class="se">\&#39;</span><span class="s1">p</span><span class="se">\&#39;</span><span class="s1"> необходимо указать порт&#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="n">server_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Порт должен быть указан в пределах от 1024 до 65535&#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s1">&#39;-a&#39;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>
+            <span class="n">address</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s1">&#39;-a&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">address</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+
+    <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+        <span class="n">server_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;После </span><span class="se">\&#39;</span><span class="s1">a</span><span class="se">\&#39;</span><span class="s1">- необходимо указать адрес для &#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">address</span><span class="p">,</span> <span class="n">port</span>
+
+
+<span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Функция запуска сервера&quot;&quot;&quot;</span>
+    <span class="n">add</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">connection_config</span><span class="p">()</span>
+    <span class="n">start_server</span> <span class="o">=</span> <span class="n">Server</span><span class="p">(</span><span class="n">add</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+    <span class="n">start_server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config.yaml&#39;</span><span class="p">)</span>
+    <span class="n">config_message</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config_massag.yaml&#39;</span><span class="p">)</span>
+    <span class="n">server_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;server_log_config&#39;</span><span class="p">)</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">JIMgeek</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../client_doc.html">client doc</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../server_doc.html">server doc</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utils_doc.html">utils doc</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2022, Kirill.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.4.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

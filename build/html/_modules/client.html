@@ -1,0 +1,362 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>client &#8212; JIMgeek  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/alabaster.css" />
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for client</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">socket</span> <span class="kn">import</span> <span class="n">socket</span><span class="p">,</span> <span class="n">AF_INET</span><span class="p">,</span> <span class="n">SOCK_STREAM</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">sqlite3</span>
+<span class="kn">from</span> <span class="nn">utils</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span> <span class="nn">log.client_log_config</span>
+
+
+<div class="viewcode-block" id="Client"><a class="viewcode-back" href="../client_doc.html#client.Client">[docs]</a><span class="k">class</span> <span class="nc">Client</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Класс выполняющий подключение и работу с сервером&quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод __init__ выполняет базовые настройки подключения&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;client_log_config&#39;</span><span class="p">)</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут логирования&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config.yaml&#39;</span><span class="p">)</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут конфигураций&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config_massag.yaml&#39;</span><span class="p">)</span>
+        <span class="sd">&quot;&quot;&quot;Атрибут конфигураций&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s1">&#39;-p&#39;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>
+                <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s1">&#39;-p&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">port</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;DEFAULT_PORT&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="mi">65535</span> <span class="o">&gt;=</span> <span class="n">port</span> <span class="o">&gt;=</span> <span class="mi">1024</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;После -</span><span class="se">\&#39;</span><span class="s1">p</span><span class="se">\&#39;</span><span class="s1"> необходимо указать порт&#39;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Порт должен быть указан в пределах от 1024 до 65535&#39;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s1">&#39;-a&#39;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>
+                <span class="n">address</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s1">&#39;-a&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">address</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;DEFAULT_IP_ADDRESS&#39;</span><span class="p">]</span>
+
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;После </span><span class="se">\&#39;</span><span class="s1">a</span><span class="se">\&#39;</span><span class="s1">- необходимо указать адрес для &#39;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span> <span class="o">=</span> <span class="n">socket</span><span class="p">(</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">SOCK_STREAM</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">connect</span><span class="p">((</span><span class="n">address</span><span class="p">,</span> <span class="n">port</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Установленно подключение&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ConnectionRefusedError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;400: Bad Request&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Client.ClientGet"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientGet">[docs]</a>    <span class="k">class</span> <span class="nc">ClientGet</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Класс для получения сообщений с сервера&quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sock</span><span class="p">,</span> <span class="n">client_name</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод __init__ выполняющий инициализацию атребутов&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;client_log_config&#39;</span><span class="p">)</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут логирования&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config.yaml&#39;</span><span class="p">)</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут конфигураций&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config_massag.yaml&#39;</span><span class="p">)</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут конфигураций&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">s</span> <span class="o">=</span> <span class="n">sock</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут сокета&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут с именем пользователя&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">contact_list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут контактов пользователя&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">massege_list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут сообщений пользователя&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">room_id_now</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут id открытой переписки&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">m</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;time&#39;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span> <span class="s1">&#39;to&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут сообщения&quot;&quot;&quot;</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Client.ClientGet.run"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientGet.run">[docs]</a>        <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод получения сообщений от сервера&quot;&quot;&quot;</span>
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="c1"># self.m = &#39;COD_NONE_MASSAGE&#39;</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="n">get_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> \
+                        <span class="n">message</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;JOIN&#39;</span><span class="p">]</span> <span class="ow">and</span> \
+                        <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;FROM&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">message</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s2">&quot;FROM&quot;</span><span class="p">]]</span><span class="si">}</span><span class="s1"> присоединился к чату.&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> <span class="n">message</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]]</span> <span class="o">==</span> <span class="s1">&#39;msg&#39;</span> <span class="ow">and</span> \
+                        <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;FROM&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;MESSAGE&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> \
+                        <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;TIME&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m</span> <span class="o">=</span> <span class="n">message</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span> \
+                        <span class="ow">and</span> <span class="n">message</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;LEAVE&#39;</span><span class="p">]</span> <span class="ow">and</span> \
+                        <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;TIME&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">message</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">message</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;ACCOUNT_NAME&quot;</span><span class="p">]]</span><span class="si">}</span><span class="s1"> покинул чат.&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s1">&#39;response&#39;</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> <span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">[</span><span class="s1">&#39;response&#39;</span><span class="p">])</span> <span class="o">==</span> <span class="nb">str</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">message</span><span class="p">[</span><span class="s1">&#39;response&#39;</span><span class="p">])</span>
+                <span class="k">if</span> <span class="s1">&#39;response&#39;</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> <span class="s1">&#39;alert&#39;</span> <span class="ow">in</span> <span class="n">message</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">contact_list</span> <span class="o">=</span> <span class="n">message</span><span class="p">[</span><span class="s1">&#39;alert&#39;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="s1">&#39;action&#39;</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">and</span> <span class="n">message</span><span class="p">[</span><span class="s1">&#39;action&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;mh&#39;</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">massege_list</span> <span class="o">=</span> <span class="n">message</span><span class="p">[</span><span class="s1">&#39;alert&#39;</span><span class="p">]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">room_id_now</span> <span class="o">=</span> <span class="n">message</span><span class="p">[</span><span class="s1">&#39;to&#39;</span><span class="p">]</span></div></div>
+
+<div class="viewcode-block" id="Client.ClientPost"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost">[docs]</a>    <span class="k">class</span> <span class="nc">ClientPost</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Класс отправки сообщений на сервер&quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sock</span><span class="p">,</span> <span class="n">client_name</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод __init__ выполняющий инициализацию атребутов&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;client_log_config&#39;</span><span class="p">)</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут логирования&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config.yaml&#39;</span><span class="p">)</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут конфигураций&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span> <span class="o">=</span> <span class="n">load_config</span><span class="p">(</span><span class="s1">&#39;config_massag.yaml&#39;</span><span class="p">)</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут конфигураций&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">s</span> <span class="o">=</span> <span class="n">sock</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут сокета&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут имени пользователя&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_script</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="sd">&quot;&quot;&quot;Атрибут контроля метода run. При значении False останавливает цикл&quot;&quot;&quot;</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Client.ClientPost.run"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.run">[docs]</a>        <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод подключения/отключения к/от сервер(а/у)&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">create_join_message</span><span class="p">()</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Добро пожаловать в чат </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="si">}</span><span class="s1">!&#39;</span><span class="p">)</span>
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_script</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">create_exit_message</span><span class="p">()</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Завершение соединения.&#39;</span><span class="p">)</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+                    <span class="k">break</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.create_join_message"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.create_join_message">[docs]</a>        <span class="k">def</span> <span class="nf">create_join_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки сообщения о подключении клиента на сервер&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]:</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;JOIN&#39;</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;TIME&#39;</span><span class="p">]:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;FROM&#39;</span><span class="p">]:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.create_message"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.create_message">[docs]</a>        <span class="k">def</span> <span class="nf">create_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">room_id</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки сообщения от клиента на сервер&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]:</span> <span class="s1">&#39;msg&#39;</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;FROM&#39;</span><span class="p">]:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span>
+                    <span class="s1">&#39;to&#39;</span><span class="p">:</span> <span class="n">room_id</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;TIME&#39;</span><span class="p">]:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;MESSAGE&#39;</span><span class="p">]:</span> <span class="n">text</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.create_exit_message"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.create_exit_message">[docs]</a>        <span class="k">def</span> <span class="nf">create_exit_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки сообщения об отключении клиента от сервера&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;ACTION&#39;</span><span class="p">]:</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_config</span><span class="p">[</span><span class="s1">&#39;LEAVE&#39;</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;TIME&#39;</span><span class="p">]:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;ACCOUNT_NAME&#39;</span><span class="p">]:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.get_contact"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.get_contact">[docs]</a>        <span class="k">def</span> <span class="nf">get_contact</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки запроса на получение списка контактов на сервер&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;get_contacts&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                <span class="s2">&quot;user_login&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.add_contact"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.add_contact">[docs]</a>        <span class="k">def</span> <span class="nf">add_contact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_id</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки сообщения о добавлении клиента в список контактов на сервер&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;add_contact&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="n">user_id</span><span class="p">,</span>
+                <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                <span class="s2">&quot;user_login&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.delete_contact"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.delete_contact">[docs]</a>        <span class="k">def</span> <span class="nf">delete_contact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_id</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки сообщения о удалении клиента из список контактов на сервер&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;del_contact&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="n">user_id</span><span class="p">,</span>
+                    <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                    <span class="s2">&quot;user_login&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.get_massage_history"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.get_massage_history">[docs]</a>        <span class="k">def</span> <span class="nf">get_massage_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод отправки запроса на получение истории сообщений на сервер&quot;&quot;&quot;</span>
+            <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;get_massage&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;user_name&quot;</span><span class="p">:</span> <span class="n">user_name</span><span class="p">,</span>
+                    <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                    <span class="s2">&quot;user_login&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+            <span class="p">}</span>
+            <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Client.ClientPost.close_client"><a class="viewcode-back" href="../client_doc.html#client.Client.ClientPost.close_client">[docs]</a>        <span class="k">def</span> <span class="nf">close_client</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Метод завершения подключения к серверу&quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_script</span> <span class="o">=</span> <span class="kc">False</span></div></div>
+
+<div class="viewcode-block" id="Client.logging_user"><a class="viewcode-back" href="../client_doc.html#client.Client.logging_user">[docs]</a>    <span class="k">def</span> <span class="nf">logging_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">password</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод авторизации пользователя&quot;&quot;&quot;</span>
+        <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;authenticate&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                <span class="s2">&quot;user&quot;</span><span class="p">:</span> <span class="p">{</span>
+                        <span class="s2">&quot;account_name&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+                        <span class="s2">&quot;password&quot;</span><span class="p">:</span> <span class="n">password</span>
+                <span class="p">}</span>
+        <span class="p">}</span>
+        <span class="n">post_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">get_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">message</span><span class="p">[</span><span class="s1">&#39;response&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">receiver</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ClientGet</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">receiver</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">receiver</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">user_interface</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ClientPost</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">user_interface</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">message</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="n">message</span></div>
+
+<div class="viewcode-block" id="Client.get_contact"><a class="viewcode-back" href="../client_doc.html#client.Client.get_contact">[docs]</a>    <span class="k">def</span> <span class="nf">get_contact</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод получение списка контактов и передачи его в виде списка&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user_interface</span><span class="o">.</span><span class="n">get_contact</span><span class="p">()</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">receiver</span><span class="o">.</span><span class="n">contact_list</span></div>
+
+<div class="viewcode-block" id="Client.get_massage_history"><a class="viewcode-back" href="../client_doc.html#client.Client.get_massage_history">[docs]</a>    <span class="k">def</span> <span class="nf">get_massage_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод получение истории сообщений и передачи её в виде списка&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user_interface</span><span class="o">.</span><span class="n">get_massage_history</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">receiver</span><span class="o">.</span><span class="n">massege_list</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">receiver</span><span class="o">.</span><span class="n">room_id_now</span></div>
+
+<div class="viewcode-block" id="Client.update_db"><a class="viewcode-back" href="../client_doc.html#client.Client.update_db">[docs]</a>    <span class="k">def</span> <span class="nf">update_db</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Метод обновления локальной базы данных&quot;&quot;&quot;</span>
+        <span class="n">message_dict</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;get_contacts_all&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+                <span class="s2">&quot;user_login&quot;</span><span class="p">:</span> <span class="n">name</span>
+        <span class="p">}</span>
+        <span class="n">post_data</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">get_data</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">db_user</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;client_db/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">_db.db&#39;</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">db_user</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">message</span><span class="p">[</span><span class="s1">&#39;alert&#39;</span><span class="p">]:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;insert OR IGNORE into contact(id, name) values (&quot;</span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s1">&quot;, &quot;</span><span class="si">{</span><span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&quot;);&#39;</span><span class="p">)</span>
+            <span class="n">db_user</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">db_user</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="k">pass</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">JIMgeek</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../client_doc.html">client doc</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../server_doc.html">server doc</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utils_doc.html">utils doc</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2022, Kirill.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.4.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

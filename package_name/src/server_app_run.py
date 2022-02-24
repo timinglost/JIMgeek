@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 import subprocess
 from PyQt5 import QtWidgets
-import server_app
+from package_name.src import server_app
 
 
 class ExampleApp(QtWidgets.QMainWindow, server_app.Ui_Form):

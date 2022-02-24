@@ -4,9 +4,7 @@ import sys
 import logging
 import select
 from utils import *
-from metaclasses import ServerVerifier
 import sqlite3
-import log.server_log_config
 
 
 class Port:

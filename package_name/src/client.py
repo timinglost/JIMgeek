@@ -5,7 +5,6 @@ import logging
 import threading
 import sqlite3
 from utils import *
-import log.client_log_config
 
 
 class Client:

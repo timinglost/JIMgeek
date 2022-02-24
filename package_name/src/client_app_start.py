@@ -1,11 +1,9 @@
 import sys
-import time
-from socket import socket, AF_INET, SOCK_STREAM
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import QInputDialog, QMessageBox
-from client import Client
-import client_app
+from package_name.src.client import Client
+from package_name.src import client_app
 from utils import *
 import hashlib
 
